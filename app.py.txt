@@ -1,0 +1,61 @@
+import streamlit as st
+from ultralytics import YOLO
+from shapely.geometry import Point, Polygon
+import cv2
+import numpy as np
+from PIL import Image
+
+st.set_page_config(page_title="Illegal Building Detector", layout="wide")
+st.title("🏗️ Illegal Building Detector")
+st.write("Upload a satellite image, detect buildings, and check which ones fall outside the permitted construction zone.")
+
+@st.cache_resource
+def load_model():
+    return YOLO("best.pt")
+
+model = load_model()
+
+uploaded_file = st.file_uploader("Upload a satellite image", type=["jpg", "jpeg", "png"])
+
+st.sidebar.header("Define Permitted Zone")
+st.sidebar.write("Set the boundary as a percentage of image width (0-100).")
+zone_left = st.sidebar.slider("Zone Left Edge (%)", 0, 100, 0)
+zone_right = st.sidebar.slider("Zone Right Edge (%)", 0, 100, 50)
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file).convert("RGB")
+    img_array = np.array(image)
+    h, w = img_array.shape[:2]
+
+    x_left = int(w * zone_left / 100)
+    x_right = int(w * zone_right / 100)
+    permitted_zone = Polygon([(x_left, 0), (x_right, 0), (x_right, h), (x_left, h)])
+
+    results = model.predict(img_array, conf=0.25, verbose=False)
+    boxes = results[0].boxes.xyxy.cpu().numpy()
+
+    img_display = img_array.copy()
+    legal_count, illegal_count = 0, 0
+
+    for box in boxes:
+        x1, y1, x2, y2 = box
+        center = Point((x1 + x2) / 2, (y1 + y2) / 2)
+        is_legal = permitted_zone.contains(center)
+        color = (0, 255, 0) if is_legal else (255, 0, 0)
+        if is_legal:
+            legal_count += 1
+        else:
+            illegal_count += 1
+        cv2.rectangle(img_display, (int(x1), int(y1)), (int(x2), int(y2)), color, 3)
+
+    cv2.rectangle(img_display, (x_left, 0), (x_right, h), (0, 0, 255), 3)
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.image(img_display, caption="Detection Result", use_container_width=True)
+    with col2:
+        st.metric("Total Buildings", legal_count + illegal_count)
+        st.metric("✅ Legal (inside zone)", legal_count)
+        st.metric("🚩 Flagged (outside zone)", illegal_count)
+else:
+    st.info("Upload an image to get started.")
