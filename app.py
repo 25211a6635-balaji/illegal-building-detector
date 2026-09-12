@@ -5,8 +5,18 @@ import cv2
 import numpy as np
 from PIL import Image
 
-st.set_page_config(page_title="Illegal Building Detector", layout="wide")
-st.title("🏗️ Illegal Building Detector")
+st.set_page_config(
+    page_title="Illegal Building Detector",
+    page_icon="logo.png",
+    layout="wide"
+)
+
+col_logo, col_title = st.columns([1, 8])
+with col_logo:
+    st.image("logo.png", width=80)
+with col_title:
+    st.title("Illegal Building Detector")
+
 st.write("Upload a satellite image, detect buildings, and check which ones fall outside the permitted construction zone.")
 
 @st.cache_resource
@@ -17,6 +27,7 @@ model = load_model()
 
 uploaded_file = st.file_uploader("Upload a satellite image", type=["jpg", "jpeg", "png"])
 
+st.sidebar.image("logo.png", width=60)
 st.sidebar.header("Define Permitted Zone")
 st.sidebar.write("Set the boundary as a percentage of image width (0-100).")
 zone_left = st.sidebar.slider("Zone Left Edge (%)", 0, 100, 0)
