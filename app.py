@@ -4,6 +4,7 @@ from shapely.geometry import Point, Polygon
 import cv2
 import numpy as np
 from PIL import Image
+import io
 
 st.set_page_config(
     page_title="Illegal Building Detector",
@@ -19,29 +20,55 @@ with col_title:
 
 st.write("Upload a satellite image, detect buildings, and check which ones fall outside the permitted construction zone.")
 
-@st.cache_resource
-def load_model():
-    return YOLO("best.pt")
-
-model = load_model()
-
-uploaded_file = st.file_uploader("Upload a satellite image", type=["jpg", "jpeg", "png"])
-
+# ---- Sidebar: About section ----
 st.sidebar.image("logo.png", width=60)
+with st.sidebar.expander("ℹ️ About this project", expanded=False):
+    st.write(
+        "This is a B.Tech mini-project that uses a YOLOv8 deep learning model "
+        "to detect buildings in satellite images, then checks each building "
+        "against a defined permitted construction zone to flag potential "
+        "illegal construction. Built with Streamlit, Ultralytics YOLOv8, and Shapely."
+    )
+
 st.sidebar.header("Define Permitted Zone")
 st.sidebar.write("Set the boundary as a percentage of image width (0-100).")
 zone_left = st.sidebar.slider("Zone Left Edge (%)", 0, 100, 0)
 zone_right = st.sidebar.slider("Zone Right Edge (%)", 0, 100, 50)
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-    img_array = np.array(image)
+# ---- Image source: upload OR example ----
+st.subheader("1. Choose an image")
+tab_upload, tab_examples = st.tabs(["📤 Upload your own", "🖼️ Try an example"])
+
+selected_image = None
+with tab_upload:
+    uploaded_file = st.file_uploader("Upload a satellite image", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        selected_image = Image.open(uploaded_file).convert("RGB")
+
+with tab_examples:
+    example_files = ["example_1.jpg", "example_2.jpg", "example_3.jpg"]
+    cols = st.columns(3)
+    for i, ex_file in enumerate(example_files):
+        with cols[i]:
+            st.image(ex_file, use_container_width=True)
+            if st.button(f"Use this image", key=f"ex_{i}"):
+                selected_image = Image.open(ex_file).convert("RGB")
+
+# ---- Run detection ----
+if selected_image is not None:
+    st.subheader("2. Detection Result")
+    img_array = np.array(selected_image)
     h, w = img_array.shape[:2]
 
     x_left = int(w * zone_left / 100)
     x_right = int(w * zone_right / 100)
     permitted_zone = Polygon([(x_left, 0), (x_right, 0), (x_right, h), (x_left, h)])
 
+    @st.cache_resource
+    def load_model():
+        return YOLO("best.pt")
+
+    model = load_model()
     results = model.predict(img_array, conf=0.25, verbose=False)
     boxes = results[0].boxes.xyxy.cpu().numpy()
 
@@ -64,9 +91,20 @@ if uploaded_file is not None:
     col1, col2 = st.columns([3, 1])
     with col1:
         st.image(img_display, caption="Detection Result", use_container_width=True)
+
+        # Download button
+        result_pil = Image.fromarray(img_display)
+        buf = io.BytesIO()
+        result_pil.save(buf, format="PNG")
+        st.download_button(
+            label="⬇️ Download Result Image",
+            data=buf.getvalue(),
+            file_name="detection_result.png",
+            mime="image/png"
+        )
     with col2:
         st.metric("Total Buildings", legal_count + illegal_count)
         st.metric("✅ Legal (inside zone)", legal_count)
         st.metric("🚩 Flagged (outside zone)", illegal_count)
 else:
-    st.info("Upload an image to get started.")
+    st.info("Upload an image or pick an example above to get started.")
